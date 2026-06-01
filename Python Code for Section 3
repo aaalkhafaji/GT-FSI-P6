@@ -1,0 +1,80 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import zipfile
+import os
+from google.colab import files
+
+def generate_taxation_figure():
+    """Simulates the MTF and CSF taxation on the Shapley Values."""
+    
+    N = 256
+    frequencies = np.arange(N//2) # Only plot the positive half of the spectrum for clarity
+    
+    # 1. Base Signal (Broadband "White" Signal where all players have roughly equal latent wealth)
+    latent_shapley = np.ones(N//2) * 100 
+    # Add a slight natural 1/f decay to make it realistic
+    latent_shapley = latent_shapley / (1 + 0.05 * frequencies)
+    
+    # 2. Simulate Physical MTF Tax (Gaussian Blur / Optical Defocus)
+    # MTF acts as a low-pass filter
+    sigma_blur = 30.0
+    mtf = np.exp(-(frequencies**2) / (2 * sigma_blur**2))
+    
+    # Theorem IV.1: Observed Shapley = MTF^2 * Latent Shapley
+    physical_shapley = (mtf**2) * latent_shapley
+    
+    # 3. Simulate Biological CSF Tax (Human Visual System)
+    # The HVS is a band-pass filter (peaks in the mid-frequencies, drops at low and high)
+    peak_freq = 25.0
+    csf = (frequencies / peak_freq) * np.exp(1 - (frequencies / peak_freq))
+    # Ensure CSF doesn't amplify beyond 1 for taxation purposes
+    csf = np.clip(csf, 0, 1) 
+    
+    # Conjecture IV.2: Perceptually Weighted Shapley
+    perceptual_shapley = (csf**2) * latent_shapley
+    
+    # 4. Plotting
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=300)
+    
+    ax.plot(frequencies, latent_shapley, color='black', linewidth=3, linestyle='--',
+             label=r'Latent Shapley $\phi_k(v)$ (Mathematical Truth)')
+    
+    ax.plot(frequencies, physical_shapley, color='red', linewidth=3, 
+             label=r'MTF Taxed Shapley $\phi_k(\tilde{v})$ (Physical Optics)')
+    
+    ax.plot(frequencies, perceptual_shapley, color='green', linewidth=3, 
+             label=r'CSF Taxed Shapley $\phi_k(w_{HVS})$ (Perceptual Observer)')
+    
+    # Fill areas to show the "Tax" collected
+    ax.fill_between(frequencies, physical_shapley, latent_shapley, color='red', alpha=0.1, label='MTF Hardware Tax')
+    ax.fill_between(frequencies, perceptual_shapley, latent_shapley, color='green', alpha=0.1, label='CSF Biological Tax')
+    
+    # Formatting
+    ax.set_title("Economic Taxation of the Spatial-Spectral Coalition", fontsize=14, fontweight='bold')
+    ax.set_xlabel("Frequency Player Index $k$", fontsize=12)
+    ax.set_ylabel("Allocated Shapley Value (Variance Payoff)", fontsize=12)
+    
+    ax.set_xlim(0, N//2 - 10)
+    ax.set_ylim(0, 110)
+    
+    ax.legend(loc='upper right', fontsize=11)
+    ax.grid(True, which="both", ls="-", alpha=0.3)
+    
+    plt.tight_layout()
+    
+    filename = 'fig_mtf_csf_tax.png'
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close()
+    print(f"Generated: {filename}")
+    return filename
+
+def package_and_download(filename):
+    zip_name = 'paper6_sec4_taxation_figure.zip'
+    with zipfile.ZipFile(zip_name, 'w') as archive:
+        if os.path.exists(filename):
+            archive.write(filename)
+    files.download(zip_name)
+
+if __name__ == "__main__":
+    fig_file = generate_taxation_figure()
+    package_and_download(fig_file)
