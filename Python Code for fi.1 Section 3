@@ -1,0 +1,109 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import zipfile
+import os
+from google.colab import files
+
+def generate_mmse_shapley_figure():
+    """Simulates the MMSE-Shapley Equivalence and the 8-Bit Quantization Tax."""
+    
+    # 1. Generate a synthetic high-resolution continuous signal
+    N = 256
+    t = np.linspace(0, 1, N)
+    
+    # Complex signal with multiple frequency components
+    true_signal = 127 + 60 * np.sin(2 * np.pi * 2 * t) + \
+                  35 * np.cos(2 * np.pi * 10 * t) + \
+                  20 * np.sin(2 * np.pi * 30 * t) + \
+                  10 * np.cos(2 * np.pi * 80 * t) + \
+                  5 * np.random.randn(N) # Small latent noise floor
+                  
+    # 2. Fourier Transform to extract players and Shapley Values
+    X = np.fft.fft(true_signal)
+    
+    # Shapley Value is the squared magnitude of the coefficient (Theorem III.1)
+    shapley_values = np.abs(X)**2
+    
+    # Sort players by their Shapley Value (Greedy best-K-term approach)
+    optimal_player_order = np.argsort(shapley_values)[::-1]
+    
+    # 3. Game-Theoretic MMSE Simulation
+    latent_mmse = []
+    hardware_mmse = []
+    
+    current_coalition_X = np.zeros(N, dtype=complex)
+    
+    for i in range(1, N + 1):
+        # Add the next most valuable player to the coalition S
+        player_idx = optimal_player_order[i-1]
+        current_coalition_X[player_idx] = X[player_idx]
+        
+        # Latent Reconstruction (Infinite Precision)
+        x_S_latent = np.real(np.fft.ifft(current_coalition_X))
+        
+        # Hardware Reconstruction (8-Bit Quantization / Rounding and Clipping)
+        x_S_hardware = np.round(np.clip(x_S_latent, 0, 255))
+        
+        # Calculate Errors (J(S))
+        error_latent = np.sum((true_signal - x_S_latent)**2)
+        error_hardware = np.sum((true_signal - x_S_hardware)**2)
+        
+        latent_mmse.append(error_latent)
+        hardware_mmse.append(error_hardware)
+        
+    # 4. Plotting the MMSE Decay Dynamics
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=300)
+    
+    coalition_sizes = np.arange(1, N + 1)
+    
+    # Normalize MMSE by the initial variance for clean percentage-based visualization
+    norm_factor = latent_mmse[0]
+    latent_mmse = np.array(latent_mmse) / norm_factor
+    hardware_mmse = np.array(hardware_mmse) / norm_factor
+    
+    # Plot curves
+    ax.plot(coalition_sizes, latent_mmse, color='blue', linewidth=3, 
+             label=r'Latent MMSE (Exact Shapley Deficit)')
+    ax.plot(coalition_sizes, hardware_mmse, color='red', linewidth=3, linestyle='--',
+             label=r'Physical 8-Bit MMSE ($\tilde{J}(S)$)')
+    
+    # Shade the "Quantization Tax"
+    ax.fill_between(coalition_sizes, hardware_mmse, latent_mmse, color='gray', alpha=0.2,
+                     label='The Quantization Tax (Hardware Noise Floor)')
+    
+    # Formatting
+    ax.set_title("Spectral MMSE Decay vs. Retained Shapley Coalition", fontsize=14, fontweight='bold')
+    ax.set_xlabel("Size of Retained Frequency Coalition $|S|$ (Players)", fontsize=12)
+    ax.set_ylabel("Normalized Mean Squared Error $J(S)$", fontsize=12)
+    
+    # Log scale for Y to clearly show the divergence at the noise floor
+    ax.set_yscale('log')
+    ax.set_xlim(1, 100) # Zoom into the critical compression region
+    ax.set_ylim(1e-4, 1.5)
+    
+    ax.legend(loc='upper right', fontsize=11)
+    ax.grid(True, which="both", ls="-", alpha=0.2)
+    
+    plt.tight_layout()
+    
+    # Save and package
+    filename = 'fig_mmse_shapley.png'
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close()
+    print(f"Generated: {filename}")
+    
+    return filename
+
+def package_and_download(filename):
+    zip_name = 'paper6_sec3_mmse_figure.zip'
+    with zipfile.ZipFile(zip_name, 'w') as archive:
+        if os.path.exists(filename):
+            archive.write(filename)
+            print(f"Added {filename} to {zip_name}")
+            
+    print(f"\nSuccessfully created {zip_name}. Prompting browser download...")
+    files.download(zip_name)
+
+if __name__ == "__main__":
+    fig_file = generate_mmse_shapley_figure()
+    package_and_download(fig_file)
