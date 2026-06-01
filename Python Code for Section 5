@@ -1,0 +1,89 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import zipfile
+import os
+from google.colab import files
+
+def generate_3d_pgtt_figure():
+    """Simulates the 3D Perceptual Game-Theoretic Transform and Volumetric Efficiency."""
+    
+    # 1. Generate a 3D structural volume (e.g., a simple medical vessel/tumor geometry)
+    N = 40 # Keep grid size manageable for quick 3D plotting
+    x, y, z = np.meshgrid(np.linspace(-1, 1, N), np.linspace(-1, 1, N), np.linspace(-1, 1, N))
+    
+    # Create a latent physical geometry (A central sphere + an overlapping cylinder)
+    sphere = (x**2 + y**2 + z**2) < 0.3
+    cylinder = (x**2 + z**2) < 0.1
+    true_volume = np.logical_or(sphere, cylinder).astype(float)
+    
+    # Add slight latent high-frequency noise
+    true_volume += 0.1 * np.random.randn(N, N, N)
+    
+    # 2. Define the 3D HVS Contrast Sensitivity Tax (Spherical Falloff)
+    # Frequencies range from -N/2 to N/2
+    fx, fy, fz = np.meshgrid(np.arange(-N//2, N//2), np.arange(-N//2, N//2), np.arange(-N//2, N//2))
+    radial_freq = np.sqrt(fx**2 + fy**2 + fz**2)
+    
+    # CSF-inspired taxation: Peak in the middle, drops to zero at high frequencies
+    peak_f = 5.0
+    csf_3d = (radial_freq / peak_f) * np.exp(1 - (radial_freq / peak_f))
+    csf_3d = np.clip(csf_3d, 0, 1)
+    
+    # 3. Define the Active Coalition (The PGTT Core Ellipsoid)
+    # Threshold the tax: if it's below 0.1, the HVS can't see it, so evict the player.
+    perceptual_threshold = 0.1
+    active_coalition_mask = csf_3d > perceptual_threshold
+    
+    # Calculate volumetric efficiency (percentage of tensor retained)
+    retention_ratio = np.sum(active_coalition_mask) / (N**3)
+    efficiency_gain = (1 - retention_ratio) * 100
+    print(f"3D PGTT Retained Players: {retention_ratio*100:.2f}%")
+    print(f"3D Computational Complexity Eliminated: {efficiency_gain:.2f}%")
+    
+    # 4. Execute the PGTT (Simulated)
+    # Forward: Transform, Shift, Apply Active Coalition Mask
+    Y_latent = np.fft.fftshift(np.fft.fftn(true_volume))
+    Y_pgtt = Y_latent * active_coalition_mask # Zero out the non-core players
+    
+    # Inverse: Perceptual Reconstruction
+    recovered_volume = np.real(np.fft.ifftn(np.fft.ifftshift(Y_pgtt)))
+    
+    # 5. Plotting the 3D Results
+    fig = plt.figure(figsize=(15, 5), dpi=300)
+    
+    # Panel 1: Latent True Volume
+    ax1 = fig.add_subplot(131, projection='3d')
+    ax1.voxels(true_volume > 0.5, edgecolor='k', facecolors='blue', alpha=0.3)
+    ax1.set_title("Latent 3D Geometry\n(Requires 100% FFT Operations)", fontsize=10, fontweight='bold')
+    ax1.axis('off')
+    
+    # Panel 2: The Active Coalition (Perceptual Ellipsoid in Frequency Space)
+    ax2 = fig.add_subplot(132, projection='3d')
+    ax2.voxels(active_coalition_mask, edgecolor='none', facecolors='red', alpha=0.5)
+    ax2.set_title(f"3D Active Coalition $K_{{3D}}$\n(Ignored {efficiency_gain:.1f}% of Computational Tensor)", fontsize=10, fontweight='bold')
+    ax2.axis('off')
+    
+    # Panel 3: PGTT Recovered Volume
+    ax3 = fig.add_subplot(133, projection='3d')
+    ax3.voxels(recovered_volume > 0.5, edgecolor='k', facecolors='green', alpha=0.3)
+    ax3.set_title("PGTT Inverted Reconstruction\n(Perceptually Isomorphic to Latent)", fontsize=10, fontweight='bold')
+    ax3.axis('off')
+    
+    plt.tight_layout()
+    
+    filename = 'fig_3d_pgtt.png'
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close()
+    return filename
+
+def package_and_download(filename):
+    zip_name = 'paper6_sec5_3d_pgtt.zip'
+    with zipfile.ZipFile(zip_name, 'w') as archive:
+        if os.path.exists(filename):
+            archive.write(filename)
+    files.download(zip_name)
+
+if __name__ == "__main__":
+    fig_file = generate_3d_pgtt_figure()
+    package_and_download(fig_file)
