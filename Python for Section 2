@@ -4,44 +4,44 @@ import zipfile
 import os
 from google.colab import files
 
-def generate_coalition_hardware_figure():
-    """Simulates the characteristic value function of frequency coalitions under hardware limits."""
+def generate_computational_coalition_figure():
+    """Simulates the matrix-based characteristic value function under hardware limits."""
     
-    # 1. Generate a synthetic 1D physical signal (e.g., an image scanline)
+    # 1. Generate a discrete 1D physical signal vector
     N = 256
-    t = np.linspace(0, 1, N)
+    t = np.linspace(0, 1, N, endpoint=False)
     
-    # Create a base signal that naturally pushes the hardware limits (8-bit: 0 to 255)
-    true_signal = 120 + 80 * np.sin(2 * np.pi * 3 * t) + \
-                  40 * np.sin(2 * np.pi * 15 * t) + \
-                  30 * np.sin(2 * np.pi * 45 * t)
+    # Base signal pushing the hardware limits (8-bit: 0 to 255)
+    x_true = 120 + 85 * np.sin(2 * np.pi * 3 * t) + \
+             45 * np.sin(2 * np.pi * 12 * t) + \
+             30 * np.sin(2 * np.pi * 40 * t)
                   
-    # 2. Fourier Transform (Decompose into players)
-    X = np.fft.fft(true_signal)
+    # 2. DFT Matrix Operation (X = W_N x)
+    X = np.fft.fft(x_true) / np.sqrt(N) # Unitary normalization
     
-    # Sort players by their energy contribution (magnitude)
+    # Sort players (frequencies) by their magnitude/worth
     energy_order = np.argsort(np.abs(X))[::-1]
     
-    # 3. Game-Theoretic Simulation: Reconstruct signal as coalition S grows
+    # 3. Game-Theoretic Matrix Simulation
     latent_energy = []
     physical_energy = []
     
-    # Empty coalition
-    current_coalition_X = np.zeros(N, dtype=complex)
+    # Empty spectral coalition vector
+    X_S = np.zeros(N, dtype=complex)
     
     for i in range(1, N + 1):
-        # Add the next most powerful player to the coalition S
+        # Player joins the coalition
         new_player_idx = energy_order[i-1]
-        current_coalition_X[new_player_idx] = X[new_player_idx]
+        X_S[new_player_idx] = X[new_player_idx]
         
-        # Synthesize partial signal (x_S)
-        x_S = np.real(np.fft.ifft(current_coalition_X))
+        # Matrix reconstruction (Inverse DFT)
+        x_S = np.real(np.fft.ifft(X_S) * np.sqrt(N))
         
-        # Calculate Latent Worth (Strictly Additive via Parseval)
+        # Calculate Latent Worth (x_S^H x_S)
         latent_v = np.sum(x_S**2)
         latent_energy.append(latent_v)
         
-        # Calculate Physical Worth (Hardware clipping at 0 and 255)
+        # Calculate Physical Worth (Hardware clipping)
         clipped_x_S = np.clip(x_S, 0, 255)
         physical_v = np.sum(clipped_x_S**2)
         physical_energy.append(physical_v)
@@ -50,61 +50,48 @@ def generate_coalition_hardware_figure():
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), dpi=300, gridspec_kw={'height_ratios': [1, 1.5]})
     
     # Panel 1: Spatial Signal
-    ax1.plot(true_signal, color='black', linewidth=2, label='Grand Coalition (True Signal)')
+    ax1.plot(x_true, color='black', linewidth=2, label='Grand Coalition (True Signal $x$)')
     ax1.axhline(255, color='red', linestyle='--', alpha=0.5, label='Hardware Ceiling (255)')
     ax1.axhline(0, color='red', linestyle='--', alpha=0.5, label='Hardware Floor (0)')
-    ax1.fill_between(range(N), 255, max(true_signal)+20, color='red', alpha=0.1)
-    ax1.fill_between(range(N), min(true_signal)-20, 0, color='red', alpha=0.1)
+    ax1.fill_between(range(N), 255, max(x_true)+20, color='red', alpha=0.1)
+    ax1.fill_between(range(N), min(x_true)-20, 0, color='red', alpha=0.1)
     ax1.set_ylim(-20, 280)
     ax1.set_xlim(0, N)
-    ax1.set_title("Spatial Reconstruction $x_S$ vs. Physical 8-Bit Hardware Boundaries", fontweight='bold')
+    ax1.set_title("Computational Matrix Reconstruction vs. Physical Hardware Boundaries", fontweight='bold')
     ax1.set_ylabel("Pixel Intensity")
     ax1.legend(loc='upper right')
     ax1.grid(True, alpha=0.3)
     
     # Panel 2: The Characteristic Value Function v(S)
     coalition_sizes = np.arange(1, N + 1)
-    
-    # Normalize for visualization
     norm_factor = latent_energy[-1]
-    latent_energy = np.array(latent_energy) / norm_factor
-    physical_energy = np.array(physical_energy) / norm_factor
     
-    ax2.plot(coalition_sizes, latent_energy, color='blue', linewidth=3, 
-             label=r'Latent Energy $v(S)$ (Strictly Additive / Parseval)')
-    ax2.plot(coalition_sizes, physical_energy, color='red', linewidth=3, linestyle='--',
-             label=r'Physical Energy $\tilde{v}(S)$ (Sub-Additive Saturation Penalty)')
+    ax2.plot(coalition_sizes, np.array(latent_energy) / norm_factor, color='blue', linewidth=3, 
+             label=r'Latent Energy $v(S)$ (Theorem II.1: Strict Additivity)')
+    ax2.plot(coalition_sizes, np.array(physical_energy) / norm_factor, color='red', linewidth=3, linestyle='--',
+             label=r'Physical Energy $\tilde{v}(S)$ (Sub-Additive Hardware Penalty)')
     
-    # Highlight the divergence (Sub-additive penalty)
-    ax2.fill_between(coalition_sizes, physical_energy, latent_energy, color='gray', alpha=0.2,
-                     label='Hardware Congestion Penalty')
+    ax2.fill_between(coalition_sizes, np.array(physical_energy)/norm_factor, np.array(latent_energy)/norm_factor, 
+                     color='gray', alpha=0.2, label='The Quantization Tax')
     
-    ax2.set_title("Characteristic Value Function: Energy Accumulation of the Coalition", fontweight='bold')
-    ax2.set_xlabel("Size of Frequency Coalition $|S|$ (Number of Players)")
+    ax2.set_title("Characteristic Value Function: Matrix Energy Accumulation", fontweight='bold')
+    ax2.set_xlabel("Size of Frequency Coalition $|S|$ (Number of Matrix Columns)")
     ax2.set_ylabel("Normalized Coalition Worth (Spatial Energy)")
-    ax2.set_xlim(1, 50) # Zoom in on the critical early players
+    ax2.set_xlim(1, 40)
     ax2.set_ylim(0, 1.1)
     ax2.legend(loc='lower right', fontsize=11)
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
-    # Save and package
     filename = 'fig_coalition_hardware.png'
     plt.savefig(filename, bbox_inches='tight')
     plt.close()
-    
     return filename
 
-def package_and_download(filename):
-    zip_name = 'paper6_sec2_figures.zip'
-    with zipfile.ZipFile(zip_name, 'w') as archive:
-        if os.path.exists(filename):
-            archive.write(filename)
-            print(f"Archived {filename}")
-    print(f"Downloading {zip_name}...")
-    files.download(zip_name)
-
 if __name__ == "__main__":
-    fig_file = generate_coalition_hardware_figure()
-    package_and_download(fig_file)
+    fig_file = generate_computational_coalition_figure()
+    zip_name = 'paper6_sec2_matrix_figures.zip'
+    with zipfile.ZipFile(zip_name, 'w') as archive:
+        archive.write(fig_file)
+    files.download(zip_name)
